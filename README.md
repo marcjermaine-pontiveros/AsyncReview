@@ -3,6 +3,7 @@ Open-source Agentic code review tool inspired by DevinReview, using Recursive La
 
 ## Prerequisites
 
+
 - **Python 3.11+**
 - **Node.js** (or Bun)
 - **uv** (recommended for Python package management)
@@ -14,7 +15,7 @@ https://github.com/user-attachments/assets/e17951e6-d73d-4cc0-8199-66c7e02f049f
 
 
 
-
+<img width="1146" height="609" alt="Screenshot 2026-01-24 at 10 37 53 PM" src="https://github.com/user-attachments/assets/1b67cf2d-6923-46b8-8fac-83e6bf707ce3" />
 
 ## Setup
 
