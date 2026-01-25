@@ -1,7 +1,7 @@
 """Type definitions for Part 2: Diff Review."""
 
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Any, Literal
 from datetime import datetime
 
 
@@ -126,6 +126,8 @@ class PRInfo:
     changed_files: int = 0
     commits_list: list[dict] = field(default_factory=list)
     comments: list[dict] = field(default_factory=list)
+    # Provider-specific metadata (e.g., GitLab host, project path)
+    provider_metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {

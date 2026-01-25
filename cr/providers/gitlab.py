@@ -4,7 +4,6 @@ Supports GitLab.com and self-hosted GitLab via GITLAB_API_BASE.
 """
 
 import re
-import uuid
 from datetime import datetime
 from urllib.parse import quote_plus
 
@@ -12,7 +11,7 @@ import httpx
 
 from ..config import GITLAB_TOKEN, GITLAB_API_BASE
 from ..diff_types import PRInfo, FileContents
-from .base import MergeRequestProvider
+from .base import DEFAULT_TIMEOUT, DEFAULT_PER_PAGE, USER_AGENT, MergeRequestProvider
 
 
 class GitLabProvider(MergeRequestProvider):
@@ -57,7 +56,7 @@ class GitLabProvider(MergeRequestProvider):
         """Get HTTP headers for GitLab API requests."""
         headers = {
             "Content-Type": "application/json",
-            "User-Agent": "cr-review-tool",
+            "User-Agent": USER_AGENT,
         }
         if GITLAB_TOKEN:
             headers["PRIVATE-TOKEN"] = GITLAB_TOKEN
@@ -77,89 +76,81 @@ class GitLabProvider(MergeRequestProvider):
     
     async def load_mr(self, url: str) -> PRInfo:
         """Load MR metadata from GitLab.
-        
+
         Args:
             url: GitLab MR URL
-            
+
         Returns:
             PRInfo with metadata and file list
         """
         host, project_path, iid = self.parse_mr_url(url)
-        review_id = str(uuid.uuid4())[:8]
+        review_id = self._generate_review_id()
         api_base = self._get_api_base(host)
-        
+
         # URL-encode the project path for API calls
         encoded_project = quote_plus(project_path)
-        
+
         async with httpx.AsyncClient() as client:
             # Fetch MR metadata
             mr_resp = await client.get(
                 f"{api_base}/projects/{encoded_project}/merge_requests/{iid}",
                 headers=self._get_headers(),
-                timeout=30.0,
+                timeout=DEFAULT_TIMEOUT,
             )
             mr_resp.raise_for_status()
             mr_data = mr_resp.json()
-            
+
             # Fetch changed files (includes diffs)
             changes_resp = await client.get(
                 f"{api_base}/projects/{encoded_project}/merge_requests/{iid}/changes",
                 headers=self._get_headers(),
-                timeout=30.0,
+                timeout=DEFAULT_TIMEOUT,
             )
             changes_resp.raise_for_status()
             changes_data = changes_resp.json()
-            
-            # Fetch commits
-            commits_resp = await client.get(
+
+            # Fetch commits using helper
+            commits_data = await self._fetch_json_list(
+                client,
                 f"{api_base}/projects/{encoded_project}/merge_requests/{iid}/commits",
-                headers=self._get_headers(),
-                params={"per_page": 100},
-                timeout=30.0,
+                self._get_headers(),
             )
-            commits_list = []
-            if commits_resp.status_code == 200:
-                commits_data = commits_resp.json()
-                commits_list = [
-                    {
-                        "sha": c["id"],
-                        "message": c["message"],
-                        "author": {
-                            "name": c["author_name"],
-                            "date": c["created_at"],
-                            "login": c.get("author_email"),
-                            "avatar_url": None,
-                        },
-                        "html_url": c["web_url"],
-                    }
-                    for c in commits_data
-                ]
-            
-            # Fetch comments (notes)
-            notes_resp = await client.get(
+            commits_list = [
+                {
+                    "sha": c["id"],
+                    "message": c["message"],
+                    "author": {
+                        "name": c["author_name"],
+                        "date": c["created_at"],
+                        "login": c.get("author_email"),
+                        "avatar_url": None,
+                    },
+                    "html_url": c["web_url"],
+                }
+                for c in commits_data
+            ]
+
+            # Fetch comments using helper
+            notes_data = await self._fetch_json_list(
+                client,
                 f"{api_base}/projects/{encoded_project}/merge_requests/{iid}/notes",
-                headers=self._get_headers(),
-                params={"per_page": 100},
-                timeout=30.0,
+                self._get_headers(),
             )
-            comments_list = []
-            if notes_resp.status_code == 200:
-                notes_data = notes_resp.json()
-                comments_list = [
-                    {
-                        "id": n["id"],
-                        "user": {
-                            "login": n["author"]["username"],
-                            "avatar_url": n["author"].get("avatar_url"),
-                        },
-                        "body": n["body"],
-                        "created_at": n["created_at"],
-                        "html_url": f"{url}#note_{n['id']}",
-                    }
-                    for n in notes_data
-                    if not n.get("system", False)  # Exclude system notes
-                ]
-        
+            comments_list = [
+                {
+                    "id": n["id"],
+                    "user": {
+                        "login": n["author"]["username"],
+                        "avatar_url": n["author"].get("avatar_url"),
+                    },
+                    "body": n["body"],
+                    "created_at": n["created_at"],
+                    "html_url": f"{url}#note_{n['id']}",
+                }
+                for n in notes_data
+                if not n.get("system", False)  # Exclude system notes
+            ]
+
         # Parse files from changes response
         files = []
         for change in changes_data.get("changes", []):
@@ -172,12 +163,12 @@ class GitLabProvider(MergeRequestProvider):
                 status = "renamed"
             else:
                 status = "modified"
-            
+
             # Count additions/deletions from diff
             diff = change.get("diff", "")
             additions = diff.count("\n+") - diff.count("\n+++")
             deletions = diff.count("\n-") - diff.count("\n---")
-            
+
             files.append({
                 "path": change.get("new_path") or change.get("old_path"),
                 "status": status,
@@ -185,7 +176,7 @@ class GitLabProvider(MergeRequestProvider):
                 "deletions": max(0, deletions),
                 "patch": diff,
             })
-        
+
         # Extract owner/repo from project path
         path_parts = project_path.split("/")
         if len(path_parts) >= 2:
@@ -194,7 +185,7 @@ class GitLabProvider(MergeRequestProvider):
         else:
             owner = ""
             repo = project_path
-        
+
         pr_info = PRInfo(
             review_id=review_id,
             owner=owner,
@@ -220,53 +211,51 @@ class GitLabProvider(MergeRequestProvider):
             changed_files=len(files),
             commits_list=commits_list,
             comments=comments_list,
+            # Store GitLab-specific data for file fetching
+            provider_metadata={"host": host, "project_path": project_path},
         )
-        
-        # Store additional GitLab-specific data for file fetching
-        pr_info._gitlab_host = host  # type: ignore
-        pr_info._gitlab_project = project_path  # type: ignore
-        
+
         # Cache for later file fetching
         self._mr_cache[review_id] = pr_info
-        
+
         return pr_info
 
     async def get_file_contents(
         self, review_id: str, path: str
     ) -> tuple[FileContents | None, FileContents | None]:
         """Get old and new file contents for a file in an MR.
-        
+
         Args:
             review_id: The review ID from load_mr
             path: File path within the repo
-            
+
         Returns:
             Tuple of (old_file, new_file) - either can be None for added/deleted files
         """
         pr_info = self._mr_cache.get(review_id)
         if not pr_info:
             raise ValueError(f"Review {review_id} not found")
-        
-        # Get GitLab-specific data
-        host = getattr(pr_info, "_gitlab_host", "gitlab.com")
-        project_path = getattr(pr_info, "_gitlab_project", f"{pr_info.owner}/{pr_info.repo}")
+
+        # Get GitLab-specific data from provider_metadata
+        host = pr_info.provider_metadata.get("host", "gitlab.com")
+        project_path = pr_info.provider_metadata.get("project_path", f"{pr_info.owner}/{pr_info.repo}")
         api_base = self._get_api_base(host)
         encoded_project = quote_plus(project_path)
         encoded_path = quote_plus(path)
-        
+
         base_sha, head_sha = pr_info.base_sha, pr_info.head_sha
-        
+
         async with httpx.AsyncClient() as client:
             old_file = None
             new_file = None
-            
+
             # Fetch base version
             try:
                 base_resp = await client.get(
                     f"{api_base}/projects/{encoded_project}/repository/files/{encoded_path}/raw",
                     headers=self._get_headers(),
                     params={"ref": base_sha},
-                    timeout=30.0,
+                    timeout=DEFAULT_TIMEOUT,
                 )
                 if base_resp.status_code == 200:
                     old_file = FileContents(
@@ -276,14 +265,14 @@ class GitLabProvider(MergeRequestProvider):
                     )
             except httpx.HTTPStatusError:
                 pass  # File doesn't exist in base (new file)
-            
+
             # Fetch head version
             try:
                 head_resp = await client.get(
                     f"{api_base}/projects/{encoded_project}/repository/files/{encoded_path}/raw",
                     headers=self._get_headers(),
                     params={"ref": head_sha},
-                    timeout=30.0,
+                    timeout=DEFAULT_TIMEOUT,
                 )
                 if head_resp.status_code == 200:
                     new_file = FileContents(
@@ -293,5 +282,5 @@ class GitLabProvider(MergeRequestProvider):
                     )
             except httpx.HTTPStatusError:
                 pass  # File doesn't exist in head (deleted file)
-        
+
         return old_file, new_file

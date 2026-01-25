@@ -1,9 +1,21 @@
 """Abstract base class for Git hosting providers."""
 
+import logging
+import uuid
 from abc import ABC, abstractmethod
 from typing import ClassVar
 
+import httpx
+
 from ..diff_types import PRInfo, FileContents
+
+# Constants for API requests
+DEFAULT_TIMEOUT = 30.0
+DEFAULT_PER_PAGE = 100
+REVIEW_ID_LENGTH = 8
+USER_AGENT = "cr-review-tool"
+
+logger = logging.getLogger(__name__)
 
 
 class MergeRequestProvider(ABC):
@@ -24,6 +36,42 @@ class MergeRequestProvider(ABC):
     
     def __init__(self) -> None:
         self._mr_cache = {}
+
+    @staticmethod
+    def _generate_review_id() -> str:
+        """Generate a unique review ID."""
+        return str(uuid.uuid4())[:REVIEW_ID_LENGTH]
+
+    @staticmethod
+    async def _fetch_json_list(
+        client: httpx.AsyncClient,
+        url: str,
+        headers: dict[str, str],
+        params: dict[str, int] | None = None,
+    ) -> list[dict]:
+        """Fetch a JSON list from an API endpoint.
+
+        Returns empty list if status is not 200.
+
+        Args:
+            client: HTTP client to use
+            url: API endpoint URL
+            headers: Request headers
+            params: Query parameters (defaults to per_page=DEFAULT_PER_PAGE)
+
+        Returns:
+            List of JSON objects, or empty list if request fails
+        """
+        params = params or {"per_page": DEFAULT_PER_PAGE}
+        resp = await client.get(url, headers=headers, params=params, timeout=DEFAULT_TIMEOUT)
+        if resp.status_code == 200:
+            return resp.json()
+        logger.warning(
+            "API request failed: %s returned status %d", 
+            url, 
+            resp.status_code
+        )
+        return []
     
     @classmethod
     @abstractmethod

@@ -4,14 +4,13 @@ Supports GitHub.com and self-hosted GitHub Enterprise via GITHUB_API_BASE.
 """
 
 import re
-import uuid
 from datetime import datetime
 
 import httpx
 
 from ..config import GITHUB_TOKEN, GITHUB_API_BASE
 from ..diff_types import PRInfo, FileContents
-from .base import MergeRequestProvider
+from .base import DEFAULT_TIMEOUT, DEFAULT_PER_PAGE, USER_AGENT, MergeRequestProvider
 
 
 class GitHubProvider(MergeRequestProvider):
@@ -55,7 +54,7 @@ class GitHubProvider(MergeRequestProvider):
         """Get HTTP headers for GitHub API requests."""
         headers = {
             "Accept": "application/vnd.github.v3+json",
-            "User-Agent": "cr-review-tool",
+            "User-Agent": USER_AGENT,
         }
         if GITHUB_TOKEN:
             headers["Authorization"] = f"token {GITHUB_TOKEN}"
@@ -63,96 +62,88 @@ class GitHubProvider(MergeRequestProvider):
     
     async def load_mr(self, url: str) -> PRInfo:
         """Load PR metadata from GitHub.
-        
+
         Args:
             url: GitHub PR URL
-            
+
         Returns:
             PRInfo with metadata and file list
         """
         owner, repo, number = self.parse_pr_url(url)
-        review_id = str(uuid.uuid4())[:8]
-        
+        review_id = self._generate_review_id()
+
         async with httpx.AsyncClient() as client:
             # Fetch PR metadata
             pr_resp = await client.get(
                 f"{GITHUB_API_BASE}/repos/{owner}/{repo}/pulls/{number}",
                 headers=self._get_headers(),
-                timeout=30.0,
+                timeout=DEFAULT_TIMEOUT,
             )
             pr_resp.raise_for_status()
             pr_data = pr_resp.json()
-            
+
             # Fetch changed files
             files_resp = await client.get(
                 f"{GITHUB_API_BASE}/repos/{owner}/{repo}/pulls/{number}/files",
                 headers=self._get_headers(),
-                params={"per_page": 100},
-                timeout=30.0,
+                params={"per_page": DEFAULT_PER_PAGE},
+                timeout=DEFAULT_TIMEOUT,
             )
             files_resp.raise_for_status()
             files_data = files_resp.json()
-        
-            # Fetch commits
-            commits_resp = await client.get(
-                f"{GITHUB_API_BASE}/repos/{owner}/{repo}/pulls/{number}/commits",
-                headers=self._get_headers(),
-                params={"per_page": 100},
-                timeout=30.0,
-            )
-            commits_list = []
-            if commits_resp.status_code == 200:
-                commits_data = commits_resp.json()
-                commits_list = [
-                    {
-                        "sha": c["sha"],
-                        "message": c["commit"]["message"],
-                        "author": {
-                            "name": c["commit"]["author"]["name"],
-                            "date": c["commit"]["author"]["date"],
-                            "login": c["author"]["login"] if c.get("author") else None,
-                            "avatar_url": c["author"]["avatar_url"] if c.get("author") else None,
-                        },
-                        "html_url": c["html_url"],
-                    }
-                    for c in commits_data
-                ]
 
-            # Fetch comments (using issue comments for main conversation)
-            comments_resp = await client.get(
-                f"{GITHUB_API_BASE}/repos/{owner}/{repo}/issues/{number}/comments",
-                headers=self._get_headers(),
-                params={"per_page": 100},
-                timeout=30.0,
+            # Fetch commits using helper
+            commits_data = await self._fetch_json_list(
+                client,
+                f"{GITHUB_API_BASE}/repos/{owner}/{repo}/pulls/{number}/commits",
+                self._get_headers(),
             )
-            comments_list = []
-            if comments_resp.status_code == 200:
-                 comments_data = comments_resp.json()
-                 comments_list = [
-                     {
-                         "id": c["id"],
-                         "user": {
-                             "login": c["user"]["login"],
-                             "avatar_url": c["user"]["avatar_url"],
-                         },
-                         "body": c["body"],
-                         "created_at": c["created_at"],
-                         "html_url": c["html_url"],
-                     }
-                     for c in comments_data
-                 ]
+            commits_list = [
+                {
+                    "sha": c["sha"],
+                    "message": c["commit"]["message"],
+                    "author": {
+                        "name": c["commit"]["author"]["name"],
+                        "date": c["commit"]["author"]["date"],
+                        "login": c["author"]["login"] if c.get("author") else None,
+                        "avatar_url": c["author"]["avatar_url"] if c.get("author") else None,
+                    },
+                    "html_url": c["html_url"],
+                }
+                for c in commits_data
+            ]
+
+            # Fetch comments using helper
+            comments_data = await self._fetch_json_list(
+                client,
+                f"{GITHUB_API_BASE}/repos/{owner}/{repo}/issues/{number}/comments",
+                self._get_headers(),
+            )
+            comments_list = [
+                {
+                    "id": c["id"],
+                    "user": {
+                        "login": c["user"]["login"],
+                        "avatar_url": c["user"]["avatar_url"],
+                    },
+                    "body": c["body"],
+                    "created_at": c["created_at"],
+                    "html_url": c["html_url"],
+                }
+                for c in comments_data
+            ]
 
         files = [
             {
-                 "path": f["filename"],
-                 "status": f.get("status", "modified"),
-                 "additions": f.get("additions", 0),
-                 "deletions": f.get("deletions", 0),
-                 "patch": f.get("patch"),
+                "path": f["filename"],
+                "status": f.get("status", "modified"),
+                "additions": f.get("additions", 0),
+                "deletions": f.get("deletions", 0),
+                "patch": f.get("patch"),
             }
             for f in files_data
         ]
-        
+
         pr_info = PRInfo(
             review_id=review_id,
             owner=owner,
@@ -176,42 +167,42 @@ class GitHubProvider(MergeRequestProvider):
             commits_list=commits_list,
             comments=comments_list,
         )
-        
+
         # Cache for later file fetching
         self._mr_cache[review_id] = pr_info
-        
+
         return pr_info
 
     async def get_file_contents(
         self, review_id: str, path: str
     ) -> tuple[FileContents | None, FileContents | None]:
         """Get old and new file contents for a file in a PR.
-        
+
         Args:
             review_id: The review ID from load_mr
             path: File path within the repo
-            
+
         Returns:
             Tuple of (old_file, new_file) - either can be None for added/deleted files
         """
         pr_info = self._mr_cache.get(review_id)
         if not pr_info:
             raise ValueError(f"Review {review_id} not found")
-        
+
         owner, repo = pr_info.owner, pr_info.repo
         base_sha, head_sha = pr_info.base_sha, pr_info.head_sha
-        
+
         async with httpx.AsyncClient() as client:
             old_file = None
             new_file = None
-            
+
             # Fetch base version
             try:
                 base_resp = await client.get(
                     f"{GITHUB_API_BASE}/repos/{owner}/{repo}/contents/{path}",
                     headers={**self._get_headers(), "Accept": "application/vnd.github.v3.raw"},
                     params={"ref": base_sha},
-                    timeout=30.0,
+                    timeout=DEFAULT_TIMEOUT,
                 )
                 if base_resp.status_code == 200:
                     old_file = FileContents(
@@ -221,14 +212,14 @@ class GitHubProvider(MergeRequestProvider):
                     )
             except httpx.HTTPStatusError:
                 pass  # File doesn't exist in base (new file)
-            
+
             # Fetch head version
             try:
                 head_resp = await client.get(
                     f"{GITHUB_API_BASE}/repos/{owner}/{repo}/contents/{path}",
                     headers={**self._get_headers(), "Accept": "application/vnd.github.v3.raw"},
                     params={"ref": head_sha},
-                    timeout=30.0,
+                    timeout=DEFAULT_TIMEOUT,
                 )
                 if head_resp.status_code == 200:
                     new_file = FileContents(
@@ -238,5 +229,5 @@ class GitHubProvider(MergeRequestProvider):
                     )
             except httpx.HTTPStatusError:
                 pass  # File doesn't exist in head (deleted file)
-        
+
         return old_file, new_file
