@@ -7,14 +7,23 @@ Two main RLM modules:
 
 import asyncio
 import logging
-from datetime import datetime
 from pathlib import Path
-from typing import AsyncGenerator, Callable, Generator
+from typing import AsyncGenerator
 
 import dspy
 from dspy.primitives.python_interpreter import PythonInterpreter
 
-from .config import MAIN_MODEL, MAX_ITERATIONS, MAX_LLM_CALLS, SUB_MODEL
+from .config import (
+    MAIN_MODEL,
+    MAX_FILE_CONTENT_CHARS,
+    MAX_ITERATIONS,
+    MAX_LLM_CALLS,
+    MAX_PATCH_CHARS,
+    MAX_REVIEW_FILES,
+    MAX_RLM_OUTPUT_CHARS,
+    MAX_VISIBLE_FILES,
+    SUB_MODEL,
+)
 from .diff_types import (
     AnswerBlock,
     DiffCitation,
@@ -74,9 +83,8 @@ def _build_diff_context_text(files: list[DiffFileContext]) -> str:
     parts.append("\nNOTE: Full content for ALL files is available in the python global variable `file_data`.\n")
     parts.append("---\n")
 
-    # 2. Show content for the first N files (e.g., 50) to save prompt tokens
+    # 2. Show content for the first N files to save prompt tokens
     # The Model can use the REPL to read the others from `file_data` if needed.
-    MAX_VISIBLE_FILES = 50
     
     for i, f in enumerate(files):
         if i >= MAX_VISIBLE_FILES:
@@ -90,18 +98,18 @@ def _build_diff_context_text(files: list[DiffFileContext]) -> str:
         
         if f.old_file and f.new_file:
             parts.append("\n### Old Version:")
-            parts.append(f.old_file.contents[:10000])  # Limit size
+            parts.append(f.old_file.contents[:MAX_FILE_CONTENT_CHARS])  # Limit size
             parts.append("\n### New Version:")
-            parts.append(f.new_file.contents[:10000])
+            parts.append(f.new_file.contents[:MAX_FILE_CONTENT_CHARS])
         elif f.new_file:
             parts.append("\n### Added File:")
-            parts.append(f.new_file.contents[:10000])
+            parts.append(f.new_file.contents[:MAX_FILE_CONTENT_CHARS])
         elif f.old_file:
             parts.append("\n### Deleted File:")
-            parts.append(f.old_file.contents[:10000])
+            parts.append(f.old_file.contents[:MAX_FILE_CONTENT_CHARS])
         elif f.patch:
             parts.append("\n### Patch:")
-            parts.append(f.patch[:5000])
+            parts.append(f.patch[:MAX_PATCH_CHARS])
         
         parts.append("\n---\n")
     
@@ -181,8 +189,7 @@ def _parse_answer_blocks(answer: str) -> list[AnswerBlock]:
 class DiffQARLM:
     """RLM for user-driven Q&A about diffs."""
 
-    def __init__(self, on_step: Callable[[int, str, str], None] | None = None):
-        self.on_step = on_step
+    def __init__(self):
         self._rlm = None
         self.lm = None
         self._configured = False
@@ -308,8 +315,8 @@ class DiffQARLM:
         # Build context from provided files or fetch
         if file_contexts is None:
             # Fix: Fetch ALL files (up to limit) in parallel to ensure visibility
-            # Limit to 50 files to prevent excessive API usage/memory
-            all_files = pr_info.files[:50]
+            # Limit to prevent excessive API usage/memory
+            all_files = pr_info.files[:MAX_VISIBLE_FILES]
             
             # Create fetch tasks
             tasks = [provider.get_file_contents(review_id, f["path"]) for f in all_files]
@@ -422,7 +429,7 @@ class DiffQARLM:
                         max_iterations=rlm.max_iterations,
                         reasoning=pred.reasoning,
                         code=pred.code,
-                        output=output[:5000],  # Limit output size
+                        output=output[:MAX_RLM_OUTPUT_CHARS],  # Limit output size
                     )
 
                     # Process result to check if done
@@ -494,8 +501,8 @@ class FastAutoReview:
             raise ValueError(f"Review {review_id} not found")
 
         # Use patch context directly (faster, standard diffs)
-        # Limit to 100 files to align with previous context limit
-        target_files = pr_info.files[:100]
+        # Limit to MAX_REVIEW_FILES for auto-review
+        target_files = pr_info.files[:MAX_REVIEW_FILES]
         diff_text = _build_patch_context(target_files)
         pr_text = f"PR #{pr_info.number}: {pr_info.title}\n{pr_info.body or 'No description'}"
 

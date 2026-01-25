@@ -83,7 +83,7 @@ class ReviewIssue:
     """An issue found during automatic review."""
     title: str
     severity: Literal["low", "medium", "high", "critical"]
-    category: Literal["investigation", "informational"]
+    category: Literal["bug", "investigation", "informational"]
     explanation_markdown: str
     citations: list[DiffCitation] = field(default_factory=list)
     fix_suggestions: list[dict] = field(default_factory=list)
