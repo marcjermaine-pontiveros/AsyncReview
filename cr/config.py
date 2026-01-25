@@ -28,6 +28,10 @@ REVIEWS_DIR = CR_CACHE_DIR / "reviews"
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
 GITHUB_API_BASE = os.getenv("GITHUB_API_BASE", "https://api.github.com")
 
+# GitLab API configuration
+GITLAB_TOKEN = os.getenv("GITLAB_TOKEN", "")
+GITLAB_API_BASE = os.getenv("GITLAB_API_BASE", "https://gitlab.com/api/v4")
+
 # API Server configuration
 API_HOST = os.getenv("API_HOST", "127.0.0.1")
 API_PORT = int(os.getenv("API_PORT", "8000"))

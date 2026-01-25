@@ -4,6 +4,69 @@
 
 AsyncReview uses Recursive Language Models (RLM) to go beyond simple diff analysis. It autonomously explores your repository, fetches relevant context, and verifies its findings in a secure sandbox before answering.
 
+- **Python 3.11+**
+- **Node.js** (or Bun)
+- **uv** (recommended for Python package management)
+- **Deno** (Required for sandboxed code execution)
+
+
+https://github.com/user-attachments/assets/e17951e6-d73d-4cc0-8199-66c7e02f049f
+
+
+
+
+<img width="1146" height="609" alt="Screenshot 2026-01-24 at 10 37 53 PM" src="https://github.com/user-attachments/assets/1b67cf2d-6923-46b8-8fac-83e6bf707ce3" />
+
+## Setup
+
+1. **Install Backend (cr)**
+   ```bash
+   # Using uv (Recommended)
+   uv pip install -e .
+
+   # Or standard pip
+   pip install -e .
+   ```
+
+2. **Install Frontend (web)**
+   ```bash
+   cd web
+   bun install  # or npm install
+   ```
+
+3. **Environment Setup**
+   Copy `.env.example` to `.env` and fill in your API keys:
+   ```bash
+   cp .env.example .env
+   ```
+   
+   **Required variables:**
+   - `GEMINI_API_KEY`: Your Google Gemini API key.
+   - `GITHUB_TOKEN`: GitHub Token (for PR access & higher rate limits).
+
+   **Optional (GitLab Support):**
+   - `GITLAB_TOKEN`: GitLab Personal Access Token.
+   - `GITLAB_API_BASE`: For self-hosted GitLab (default: `https://gitlab.com/api/v4`).
+
+   **Self-hosted GitHub Enterprise:**
+   - `GITHUB_API_BASE`: For GitHub Enterprise (default: `https://api.github.com`).
+
+## Supported Providers
+
+| Provider | Example URL |
+|----------|-------------|
+| GitHub | `https://github.com/owner/repo/pull/123` |
+| GitHub Enterprise | `https://github.example.com/owner/repo/pull/123` |
+| GitLab | `https://gitlab.com/owner/repo/-/merge_requests/123` |
+| GitLab (self-hosted) | `https://gitlab.example.com/owner/repo/-/merge_requests/123` |
+
+## Running
+
+### 1. Start the API Server
+```bash
+cr serve
+# or
+uv run uvicorn cr.server:app --reload
 ```
        User Request
      "Verify this PR/Issue"

@@ -41,25 +41,27 @@ class TestLoadPREndpoint:
             files=[{"path": "file.py", "status": "modified"}],
         )
         
-        with patch("cr.server.load_pr", new_callable=AsyncMock) as mock_load:
-            mock_load.return_value = mock_pr_info
+        mock_provider = MagicMock()
+        mock_provider.load_mr = AsyncMock(return_value=mock_pr_info)
+        
+        with patch("cr.server.get_provider_for_url", return_value=mock_provider):
+            with patch("cr.server.cache_provider"):
+                response = client.post(
+                    "/api/github/load_pr",
+                    json={"prUrl": "https://github.com/test/repo/pull/42"},
+                )
             
-            response = client.post(
-                "/api/github/load_pr",
-                json={"prUrl": "https://github.com/test/repo/pull/42"},
-            )
-            
-            assert response.status_code == 200
-            data = response.json()
-            assert data["reviewId"] == "test123"
-            assert data["title"] == "Test PR"
-            assert data["repo"]["owner"] == "test"
-            assert len(data["files"]) == 1
+                assert response.status_code == 200
+                data = response.json()
+                assert data["reviewId"] == "test123"
+                assert data["title"] == "Test PR"
+                assert data["repo"]["owner"] == "test"
+                assert len(data["files"]) == 1
 
     def test_load_pr_invalid_url(self, client):
         """Test error on invalid PR URL."""
-        with patch("cr.server.load_pr", new_callable=AsyncMock) as mock_load:
-            mock_load.side_effect = ValueError("Invalid GitHub PR URL")
+        with patch("cr.server.get_provider_for_url") as mock_get_provider:
+            mock_get_provider.side_effect = ValueError("No provider found for URL")
             
             response = client.post(
                 "/api/github/load_pr",
@@ -77,9 +79,10 @@ class TestGetFileEndpoint:
         old_file = FileContents(name="file.py", contents="old", cache_key="old-key")
         new_file = FileContents(name="file.py", contents="new", cache_key="new-key")
         
-        with patch("cr.server.get_file_contents", new_callable=AsyncMock) as mock_get:
-            mock_get.return_value = (old_file, new_file)
-            
+        mock_provider = MagicMock()
+        mock_provider.get_file_contents = AsyncMock(return_value=(old_file, new_file))
+        
+        with patch("cr.server.get_provider_for_review", return_value=mock_provider):
             response = client.get("/api/github/file?reviewId=test123&path=file.py")
             
             assert response.status_code == 200
@@ -91,9 +94,10 @@ class TestGetFileEndpoint:
         """Test getting a newly added file."""
         new_file = FileContents(name="new.py", contents="new content")
         
-        with patch("cr.server.get_file_contents", new_callable=AsyncMock) as mock_get:
-            mock_get.return_value = (None, new_file)
-            
+        mock_provider = MagicMock()
+        mock_provider.get_file_contents = AsyncMock(return_value=(None, new_file))
+        
+        with patch("cr.server.get_provider_for_review", return_value=mock_provider):
             response = client.get("/api/github/file?reviewId=test123&path=new.py")
             
             assert response.status_code == 200
@@ -103,9 +107,7 @@ class TestGetFileEndpoint:
 
     def test_get_file_not_found(self, client):
         """Test error when review not found."""
-        with patch("cr.server.get_file_contents", new_callable=AsyncMock) as mock_get:
-            mock_get.side_effect = ValueError("Review not found")
-            
+        with patch("cr.server.get_provider_for_review", return_value=None):
             response = client.get("/api/github/file?reviewId=unknown&path=file.py")
             
             assert response.status_code == 404

@@ -25,7 +25,7 @@ from .diff_types import (
     ReviewIssue,
     RLMIteration,
 )
-from .github import get_cached_pr, get_file_contents
+from .providers.registry import get_provider_for_review
 from .rlm_runner import build_deno_command
 
 
@@ -218,7 +218,10 @@ class DiffQARLM:
         """Ask a question about the diff."""
         self._ensure_configured()
         
-        pr_info = get_cached_pr(review_id)
+        provider = get_provider_for_review(review_id)
+        if not provider:
+            raise ValueError(f"Review {review_id} not found")
+        pr_info = provider.get_cached_mr(review_id)
         if not pr_info:
             raise ValueError(f"Review {review_id} not found")
         
@@ -227,7 +230,7 @@ class DiffQARLM:
             file_contexts = []
             # Fetch first few files for context
             for f in pr_info.files[:5]:
-                old_file, new_file = await get_file_contents(review_id, f["path"])
+                old_file, new_file = await provider.get_file_contents(review_id, f["path"])
                 file_contexts.append(DiffFileContext(
                     path=f["path"],
                     old_file=old_file,
@@ -295,7 +298,10 @@ class DiffQARLM:
 
         self._ensure_configured()
 
-        pr_info = get_cached_pr(review_id)
+        provider = get_provider_for_review(review_id)
+        if not provider:
+            raise ValueError(f"Review {review_id} not found")
+        pr_info = provider.get_cached_mr(review_id)
         if not pr_info:
             raise ValueError(f"Review {review_id} not found")
 
@@ -306,7 +312,7 @@ class DiffQARLM:
             all_files = pr_info.files[:50]
             
             # Create fetch tasks
-            tasks = [get_file_contents(review_id, f["path"]) for f in all_files]
+            tasks = [provider.get_file_contents(review_id, f["path"]) for f in all_files]
             results = await asyncio.gather(*tasks)
             
             file_contexts = []
@@ -480,7 +486,10 @@ class FastAutoReview:
         """
         self._ensure_configured()
 
-        pr_info = get_cached_pr(review_id)
+        provider = get_provider_for_review(review_id)
+        if not provider:
+            raise ValueError(f"Review {review_id} not found")
+        pr_info = provider.get_cached_mr(review_id)
         if not pr_info:
             raise ValueError(f"Review {review_id} not found")
 

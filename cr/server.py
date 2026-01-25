@@ -12,7 +12,8 @@ from sse_starlette.sse import EventSourceResponse
 from .config import API_HOST, API_PORT
 from .diff_rlm import FastAutoReview, DiffQARLM
 from .diff_types import DiffFileContext, DiffSelection, FileContents, RLMIteration
-from .github import get_cached_pr, get_file_contents, load_pr
+from .providers import get_provider_for_url
+from .providers.registry import get_provider_for_review, cache_provider
 
 app = FastAPI(
     title="CR Review API",
@@ -109,9 +110,11 @@ class SuggestionResponse(BaseModel):
 # Endpoints
 @app.post("/api/github/load_pr", response_model=LoadPRResponse)
 async def api_load_pr(request: LoadPRRequest):
-    """Load a GitHub PR for review."""
+    """Load a GitHub/GitLab PR/MR for review."""
     try:
-        pr_info = await load_pr(request.prUrl)
+        provider = get_provider_for_url(request.prUrl)
+        pr_info = await provider.load_mr(request.prUrl)
+        cache_provider(pr_info.review_id, provider)
         return LoadPRResponse(**pr_info.to_dict())
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -124,9 +127,12 @@ async def api_get_file(
     reviewId: str = Query(..., description="Review ID from load_pr"),
     path: str = Query(..., description="File path"),
 ):
-    """Get base and head file contents for a file in a PR."""
+    """Get base and head file contents for a file in a PR/MR."""
     try:
-        old_file, new_file = await get_file_contents(reviewId, path)
+        provider = get_provider_for_review(reviewId)
+        if not provider:
+            raise ValueError(f"Review {reviewId} not found")
+        old_file, new_file = await provider.get_file_contents(reviewId, path)
         return FileContentsResponse(
             oldFile={"name": old_file.name, "contents": old_file.contents, "cacheKey": old_file.cache_key} if old_file else None,
             newFile={"name": new_file.name, "contents": new_file.contents, "cacheKey": new_file.cache_key} if new_file else None,
@@ -193,7 +199,10 @@ async def api_suggestions(request: SuggestionRequest):
     try:
         from .suggestions import get_suggestion_generator
         
-        pr_info = get_cached_pr(request.reviewId)
+        provider = get_provider_for_review(request.reviewId)
+        if not provider:
+            raise ValueError("PR not found")
+        pr_info = provider.get_cached_mr(request.reviewId)
         if not pr_info:
             raise ValueError("PR not found")
             
