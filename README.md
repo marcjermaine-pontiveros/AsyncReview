@@ -8,6 +8,14 @@ Open-source Agentic code review tool inspired by DevinReview, using Recursive La
 - **uv** (recommended for Python package management)
 - **Deno** (Required for sandboxed code execution)
 
+
+https://github.com/user-attachments/assets/e17951e6-d73d-4cc0-8199-66c7e02f049f
+
+
+
+
+
+
 ## Setup
 
 1. **Install Backend (cr)**
