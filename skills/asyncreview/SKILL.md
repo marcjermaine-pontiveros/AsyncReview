@@ -44,7 +44,7 @@ export GEMINI_API_KEY="user-provided-key"
 
 ```bash
 npx asyncreview review --url <PR_URL> -q "question"   # Review a PR
-npx asyncreview review --url <PR_URL> --output md     # Markdown output
+npx asyncreview review --url <PR_URL> --output markdown     # Markdown output
 ```
 
 ## Core workflow
@@ -60,7 +60,7 @@ npx asyncreview review --url <PR_URL> --output md     # Markdown output
 
 ```bash
 npx asyncreview review --url <url> -q "question"      # Review with question
-npx asyncreview review --url <url> -q "q" --output md # Markdown output
+npx asyncreview review --url <url> -q "q" --output markdown # Markdown output
 npx asyncreview review --url <url> -q "q" -o json     # JSON output
 ```
 
@@ -110,5 +110,5 @@ The AI will:
 | Format | Flag | Description |
 |--------|------|-------------|
 | Pretty | (default) | Rich terminal output with boxes |
-| Markdown | `--output md` or `-o md` | Markdown formatted |
+| Markdown | `--output markdown` or `-o markdown` | Markdown formatted |
 | JSON | `--output json` or `-o json` | Machine-readable |
