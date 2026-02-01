@@ -6,20 +6,29 @@ AsyncReview uses Recursive Language Models (RLM) to go beyond simple diff analys
 
 ```
        User Request
-     "Verify this PR"
+     "Verify this PR/Issue"
            │
            ▼
-+-------------------------+       +-------------------------+
-|    AsyncReview Agent    |       |     GitHub Repository   |
-|                         |       |                         |
-|   1. Analyze Diff       |       |   [Code] [Issues]       |
-|   2. Formulate Plan     |------>|   [PRs]  [Comments]     |
-|   3. Explore Codebase   |<------|                         |
-|   4. Verify via REPL    |       |                         |
-+-------------------------+       +-------------------------+
-           │     ▲
-           ▼     │ (Recursive Loop)
-      [Grounded Answer]
++-------------------------------------------------------+
+|  AsyncReview Agent (Recursive Loop)                   |
+|                                                       |
+|  1. Reason & Plan                                     |
+|  2. Generate Python Code                              |
+|       │                                               |
+|       ▼                                               |
+|  3. [Python REPL Sandbox]                             |
+|     (Executes logic + llm_query() + tool commands)    |
+|       │                                               |
+|       ▼                                               |
+|  4. Tool Interceptor <-----> [GitHub API]             |
+|     (FETCH_FILE, SEARCH)     (Fetches real data)      |
+|       │                                               |
+|       ▼                                               |
+|  5. Observe Result & Repeat Recursively               |
++-------------------------------------------------------+
+           │
+           ▼
+      [10x High Quality Answer]
 ```
 
 #
