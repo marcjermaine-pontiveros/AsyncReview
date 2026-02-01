@@ -4,69 +4,6 @@
 
 AsyncReview uses Recursive Language Models (RLM) to go beyond simple diff analysis. It autonomously explores your repository, fetches relevant context, and verifies its findings in a secure sandbox before answering.
 
-- **Python 3.11+**
-- **Node.js** (or Bun)
-- **uv** (recommended for Python package management)
-- **Deno** (Required for sandboxed code execution)
-
-
-https://github.com/user-attachments/assets/e17951e6-d73d-4cc0-8199-66c7e02f049f
-
-
-
-
-<img width="1146" height="609" alt="Screenshot 2026-01-24 at 10 37 53 PM" src="https://github.com/user-attachments/assets/1b67cf2d-6923-46b8-8fac-83e6bf707ce3" />
-
-## Setup
-
-1. **Install Backend (cr)**
-   ```bash
-   # Using uv (Recommended)
-   uv pip install -e .
-
-   # Or standard pip
-   pip install -e .
-   ```
-
-2. **Install Frontend (web)**
-   ```bash
-   cd web
-   bun install  # or npm install
-   ```
-
-3. **Environment Setup**
-   Copy `.env.example` to `.env` and fill in your API keys:
-   ```bash
-   cp .env.example .env
-   ```
-   
-   **Required variables:**
-   - `GEMINI_API_KEY`: Your Google Gemini API key.
-   - `GITHUB_TOKEN`: GitHub Token (for PR access & higher rate limits).
-
-   **Optional (GitLab Support):**
-   - `GITLAB_TOKEN`: GitLab Personal Access Token.
-   - `GITLAB_API_BASE`: For self-hosted GitLab (default: `https://gitlab.com/api/v4`).
-
-   **Self-hosted GitHub Enterprise:**
-   - `GITHUB_API_BASE`: For GitHub Enterprise (default: `https://api.github.com`).
-
-## Supported Providers
-
-| Provider | Example URL |
-|----------|-------------|
-| GitHub | `https://github.com/owner/repo/pull/123` |
-| GitHub Enterprise | `https://github.example.com/owner/repo/pull/123` |
-| GitLab | `https://gitlab.com/owner/repo/-/merge_requests/123` |
-| GitLab (self-hosted) | `https://gitlab.example.com/owner/repo/-/merge_requests/123` |
-
-## Running
-
-### 1. Start the API Server
-```bash
-cr serve
-# or
-uv run uvicorn cr.server:app --reload
 ```
        User Request
      "Verify this PR/Issue"
@@ -94,7 +31,6 @@ uv run uvicorn cr.server:app --reload
       [10x High Quality Answer]
 ```
 
-#
 <img width="588" height="596" alt="image" src="https://github.com/user-attachments/assets/daad14de-119f-45a8-9ad9-db6649dc9c44" />
 
 
@@ -123,6 +59,15 @@ OR
 npx skills add AsyncFuncAI/AsyncReview
 ```
 
+## Supported Providers
+
+| Provider | Example URL |
+|----------|-------------|
+| GitHub | `https://github.com/owner/repo/pull/123` |
+| GitHub Enterprise | `https://github.example.com/owner/repo/pull/123` |
+| GitLab | `https://gitlab.com/owner/repo/-/merge_requests/123` |
+| GitLab (self-hosted) | `https://gitlab.example.com/owner/repo/-/merge_requests/123` |
+
 ## Usage
 
 ### Public Repositories
@@ -142,7 +87,7 @@ For private repos, you also need a GitHub token.
    ```bash
    # If you have GitHub CLI installed
    export GITHUB_TOKEN=$(gh auth token)
-   
+
    # Or manually set it
    export GITHUB_TOKEN="ghp_..."
    ```
@@ -155,10 +100,17 @@ For private repos, you also need a GitHub token.
 ## Configuration
 
 **Required:**
-- **Gemini API Key:** Get one from Google AI Studio. Set as `GEMINI_API_KEY`.
+- `GEMINI_API_KEY`: Your Google Gemini API key (get from Google AI Studio)
 
-**Optional:**
-- **GitHub Token:** Required for private repositories to access file contents. Set as `GITHUB_TOKEN`.
+**For Private Repositories:**
+- `GITHUB_TOKEN`: GitHub Token for private repo access & higher rate limits
+
+**For GitLab Support:**
+- `GITLAB_TOKEN`: GitLab Personal Access Token
+- `GITLAB_API_BASE`: For self-hosted GitLab (default: `https://gitlab.com/api/v4`)
+
+**For GitHub Enterprise:**
+- `GITHUB_API_BASE`: For self-hosted GitHub (default: `https://api.github.com`)
 
 ## For Agents (Claude, Cursor, OpenCode, Gemini, Codex, etc.)
 
